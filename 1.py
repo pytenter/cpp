@@ -1,4 +1,4 @@
-import os
+import os#尝试过hi
 import re
 import tempfile
 import fitz  # PyMuPDF
@@ -17,7 +17,6 @@ from langchain.prompts import ChatPromptTemplate
 from sentence_transformers import SentenceTransformer
 from collections import defaultdict
 os.makedirs("static", exist_ok=True)
-
 # --- START OF CONFIGURATION AND TEXT/TRANSLATION SECTION ---
 os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY", "")
 similarity_model = SentenceTransformer('all-MiniLM-L6-v2')
