@@ -1,5 +1,3 @@
-#这次是我的第二次修改尝试
-
 import os
 import re
 import tempfile
@@ -19,6 +17,7 @@ from langchain.prompts import ChatPromptTemplate
 from sentence_transformers import SentenceTransformer
 from collections import defaultdict
 os.makedirs("static", exist_ok=True)
+
 # --- START OF CONFIGURATION AND TEXT/TRANSLATION SECTION ---
 os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY", "")
 similarity_model = SentenceTransformer('all-MiniLM-L6-v2')
