@@ -61,7 +61,9 @@ TEXT = {
         "highlight_preview": "Highlighted Preview (Page {page_num})",
         "history_header": "📜 History",
         "clear_history": "Clear History"
-    },
+
+
+},
     "zh": {
         "title": "📚 基于LangChain的PDF问答系统",
         "api_input": "OpenAI API密钥",
@@ -81,7 +83,9 @@ TEXT = {
         "download_highlighted": "下载高亮版PDF",
         "highlight_preview": "高亮预览（第 {page_num} 页）",
         "history_header": "📜 历史记录",
-        "clear_history": "清除历史记录"
+        "clear_history": "清除历史记录",
+        "preview_page": "Preview Page {page_num}"
+
     }
 }
 # --- END OF CONFIGURATION AND TEXT/TRANSLATION SECTION ---
@@ -221,6 +225,16 @@ def add_highlights(pdf_bytes, docs_to_highlight):
     return output_bytes
 # --- END OF CORE FUNCTIONS ---
 
+def show_pdf_preview(source_file, page_num, T):
+    pdf_bytes = st.session_state.pdf_bytes.get(source_file)
+    if not pdf_bytes:
+        st.warning("PDF not found in session.")
+        return
+    with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+        page = doc.load_page(page_num)
+        pix = page.get_pixmap(dpi=150)
+        st.image(pix.tobytes(), use_column_width=True, caption=T['highlight_preview'].format(page_num=page_num + 1))
+
 
 # --- START OF NEW DISPLAY FUNCTION ---
 def display_qa_results(item, T):
@@ -249,6 +263,17 @@ def display_qa_results(item, T):
             page_num = doc.metadata.get('page', 0)
             st.write(f"  - Chapter: {doc.metadata['chapter']} | Page: {page_num + 1}")
             st.write(f"    Excerpt: {doc.page_content[:200]}...")
+            # 🔍 原文预览按钮：添加在 excerpt 下方
+            st.button(
+                f"🔍 {T['highlight_preview'].format(page_num=page_num + 1)}",
+                key=f"preview_{source_file}_{page_num}_{item['query']}",
+                on_click=show_pdf_preview,
+                kwargs={
+                    "source_file": source_file,
+                    "page_num": page_num,
+                    "T": T
+                }
+            )
 
         with st.expander(T["show_highlights"]):
             docs_to_highlight = defaultdict(list)
@@ -298,6 +323,28 @@ def main():
     LANG = st.radio("🌐 Language / 语言", options=["en", "zh"], format_func=lambda x: "English" if x == "en" else "中文", horizontal=True)
     T = TEXT[LANG]
     st.title(T["title"])
+
+    st.subheader("🔍 Full Document Keyword Search")
+    keyword = st.text_input("Enter keyword to search inside all uploaded PDFs")
+    if keyword and "splits" in st.session_state and st.session_state.splits:
+        keyword_hits = []
+        for doc in st.session_state.splits:
+            if keyword.lower() in doc.page_content.lower():
+                keyword_hits.append({
+                    "text": doc.page_content[:300],
+                    "chapter": doc.metadata.get("chapter", "Unknown"),
+                    "page": doc.metadata.get("page", 0) + 1,
+                    "source": doc.metadata.get("source", "Unknown")
+                })
+
+        if keyword_hits:
+            st.write(f"Found {len(keyword_hits)} results for: **{keyword}**")
+            for hit in keyword_hits:
+                st.write(f"📄 **{hit['source']}** | 📘 Chapter: {hit['chapter']} | 📄 Page {hit['page']}")
+                st.text_area("Excerpt", hit["text"], height=100)
+                st.divider()
+        else:
+            st.warning("No matching results found.")
 
     with st.sidebar:
         api_key = st.text_input(T["api_input"] + " (e.g., DeepSeek Key)", type="password")
