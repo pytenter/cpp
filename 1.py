@@ -11,15 +11,31 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_community.retrievers import BM25Retriever
 from langchain.retrievers.ensemble import EnsembleRetriever
-from langchain_community.chat_models import ChatOpenAI
+from langchain_openai import ChatOpenAI
 from langchain.chains import LLMChain
 from langchain.prompts import ChatPromptTemplate
 from sentence_transformers import SentenceTransformer
 from collections import defaultdict
 os.makedirs("static", exist_ok=True)
 
+#步骤一：修改requirements文件
+#步骤二：重新构建 Docker 镜像
+#必须重新构建，才能让容器安装新依赖：
+#在终端输入以下代码
+#cd D:\cpp
+#docker build -t pdf-qa .
+#步骤三：重新运行容器
+#构建成功后再次运行：
+#docker run -p 8501:8501 pdf-qa
+#然后访问
+#http://localhost:8501
+
+#deepseek的API密钥
+#sk-d7e0f2023a7b498c8d0381fa04e85298
+
 # --- START OF CONFIGURATION AND TEXT/TRANSLATION SECTION ---
 os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY", "")
+os.environ["OPENAI_API_BASE"] = os.getenv("OPENAI_API_BASE", "https://api.deepseek.com/v1")
 similarity_model = SentenceTransformer('all-MiniLM-L6-v2')
 
 LANG = "en"
@@ -142,21 +158,28 @@ def create_hybrid_retriever(vector_store, splits, query):
     )
 
 
+from langchain.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnableSequence
+
 def create_qa_chain():
-    llm = OpenAI(model_name="gpt-3.5-turbo-instruct", temperature=0.1)
-    prompt_template = """
-    Based on the reference documents below, answer the question under these rules:
-    1. Only answer based on the document, do not use external knowledge.
-    2. Cite the content clearly with source (format: [Document, Chapter, Page]).
-    3. If not found, respond with "No relevant information found".
+    llm = ChatOpenAI(
+        model_name="deepseek-chat",
+        temperature=0.1,
+        openai_api_key=os.getenv("OPENAI_API_KEY"),
+        openai_api_base=os.getenv("OPENAI_API_BASE")
+    )
 
-    Reference Documents:
-    {context}
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", "You are a helpful assistant. Based on the reference documents below, answer the user question under these rules:\n"
+                   "1. Only answer based on the document, do not use external knowledge.\n"
+                   "2. Cite the content clearly with source (format: [Document, Chapter, Page]).\n"
+                   "3. If not found, respond with 'No relevant information found'."),
+        ("human", "{context}\n\nQuestion: {question}")
+    ])
 
-    Question: {question}
-    Answer:
-    """
-    return LLMChain(llm=llm, prompt=ChatPromptTemplate.from_template(prompt_template))
+    return prompt | llm  # 使用新语法替代 LLMChain
+
+
 
 
 def add_highlights(pdf_bytes, docs_to_highlight):
@@ -250,9 +273,11 @@ def main():
     st.title(T["title"])
 
     with st.sidebar:
-        api_key = st.text_input(T["api_input"], type="password")
+        api_key = st.text_input(T["api_input"] + " (e.g., DeepSeek Key)", type="password")
+
         if api_key:
             os.environ["OPENAI_API_KEY"] = api_key
+            os.environ["OPENAI_API_BASE"] = "https://api.deepseek.com/v1"  # ✅ 加上这一行
             st.success(T["api_set"])
 
         # --- History Section ---
@@ -305,7 +330,8 @@ def main():
 
                 context = "\n\n".join(context_docs)
                 qa_chain = create_qa_chain()
-                answer = qa_chain.run({"context": context, "question": query})
+                answer = qa_chain.invoke({"context": context, "question": query})
+
 
                 # Create and store the new history item
                 new_item = {"query": query, "answer": answer, "docs_by_source": docs_by_source}
