@@ -85,6 +85,32 @@ TEXT = {
     }
 }
 # --- END OF CONFIGURATION AND TEXT/TRANSLATION SECTION ---
+import re
+
+def clean_markdown(text):
+    """
+    Remove markdown/LaTeX formatting from text (like **bold**, $math$, \(...\), etc.)
+    """
+    # Remove **bold**
+    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
+
+    # Remove inline code `like this`
+    text = re.sub(r'`(.*?)`', r'\1', text)
+
+    # Remove LaTeX math \( ... \) or \[ ... \]
+    text = re.sub(r'\\\((.*?)\\\)', r'\1', text)
+    text = re.sub(r'\\\[(.*?)\\\]', r'\1', text)
+
+    # Remove $...$
+    text = re.sub(r'\$(.*?)\$', r'\1', text)
+
+    # Replace <br> and <br/> with newlines
+    text = re.sub(r'<br\s*/?>', '\n', text)
+
+    # Remove remaining HTML tags
+    text = re.sub(r'<[^>]+>', '', text)
+
+    return text.strip()
 
 
 # --- START OF CORE FUNCTIONS ---
@@ -202,7 +228,8 @@ def display_qa_results(item, T):
     Displays the question, answer, sources, and highlighting options for a given item.
     """
     st.subheader(T["answer"])
-    st.write(item["answer"])
+    cleaned_answer = clean_markdown(item["answer"])
+    st.write(cleaned_answer)
 
     # Feedback buttons with unique keys based on the query
     col1, col2 = st.columns([1, 1])
