@@ -163,8 +163,6 @@ def load_and_split_pdf(pdf_files):
         separators=["\n\n", "\n", " ", ""]
     )
     splits = text_splitter.split_documents(documents)
-    st.session_state.toc_data = toc  # 保存目录结构
-
     return [doc for doc in splits if len(doc.page_content) > 50]
 
 
@@ -244,16 +242,7 @@ def display_qa_results(item, T):
     Displays the question, answer, sources, and highlighting options for a given item.
     """
     st.subheader(T["answer"])
-    raw_answer = item["answer"]
-
-    if hasattr(raw_answer, "content"):
-        answer_text = raw_answer.content
-    elif isinstance(raw_answer, dict) and "content" in raw_answer:
-        answer_text = raw_answer["content"]
-    else:
-        answer_text = str(raw_answer)
-
-    cleaned_answer = clean_markdown(answer_text)
+    cleaned_answer = clean_markdown(item["answer"])
     st.write(cleaned_answer)
 
     # Feedback buttons with unique keys based on the query
@@ -277,7 +266,7 @@ def display_qa_results(item, T):
             # 🔍 原文预览按钮：添加在 excerpt 下方
             st.button(
                 f"🔍 {T['highlight_preview'].format(page_num=page_num + 1)}",
-                key=f"preview_{source_file}_{page_num}_{item['query']}",
+                key=f"preview_{source_file}_{page_num}_{abs(hash(doc.page_content[:10]))}",
                 on_click=show_pdf_preview,
                 kwargs={
                     "source_file": source_file,
@@ -379,12 +368,6 @@ def main():
                 st.session_state.active_item = item
                 st.rerun()
 
-        if "toc_data" in st.session_state and st.session_state.toc_data:
-            st.subheader("📑 TOC Navigator")
-            for level, title, page in st.session_state.toc_data:
-                indent = "    " * (level - 1)
-                st.markdown(f"{indent}- Page {page}: {title}")
-
     uploaded_files = st.file_uploader(T["upload"], type=["pdf"], accept_multiple_files=True)
     file_identifier = "".join(sorted([f.name for f in uploaded_files])) if uploaded_files else None
 
@@ -401,51 +384,6 @@ def main():
             st.session_state.active_item = None
 
         query = st.text_input(T["enter_question"], key="query_input")
-
-        if st.button("🧠 Generate Section Summaries"):
-            with st.spinner("Generating summaries..."):
-                summaries = []
-                grouped = defaultdict(list)
-                for doc in st.session_state.splits:
-                    chapter = doc.metadata.get("chapter", "Unknown")
-                    grouped[chapter].append(doc.page_content)
-
-                summarizer = ChatOpenAI(
-                    model_name="deepseek-chat",
-                    temperature=0.3,
-                    openai_api_key=os.getenv("OPENAI_API_KEY"),
-                    openai_api_base=os.getenv("OPENAI_API_BASE")
-                )
-
-                for chapter, contents in grouped.items():
-                    chunk = "\n".join(contents[:3])[:1500]  # 只截取每章部分内容避免超长
-                    summary_prompt = f"Summarize the following content from the chapter '{chapter}':\n\n{chunk}"
-                    result = summarizer.invoke(summary_prompt)
-                    summaries.append((chapter, result.content))
-
-                for chapter, summary in summaries:
-                    st.markdown(f"### 📘 {chapter}")
-                    st.write(summary)
-
-
-        if st.button("📝 Generate Quiz"):
-            with st.spinner("Generating quiz questions..."):
-                quiz_generator = ChatOpenAI(
-                    model_name="deepseek-chat",
-                    temperature=0.3,
-                    openai_api_key=os.getenv("OPENAI_API_KEY"),
-                    openai_api_base=os.getenv("OPENAI_API_BASE")
-                )
-
-                quiz_content = "\n".join(doc.page_content for doc in st.session_state.splits[:5])[:2000]
-                quiz_prompt = (
-                        "Based on the following content, generate 3 multiple-choice questions. "
-                        "Each question should have 4 options and indicate the correct answer:\n\n"
-                        + quiz_content
-                )
-                result = quiz_generator.invoke(quiz_prompt)
-                st.markdown("### 🧪 Quiz")
-                st.write(result.content)
 
         # Process a new query
         is_new_query = query and (not st.session_state.active_item or query != st.session_state.active_item.get("query"))
@@ -466,11 +404,16 @@ def main():
 
                 context = "\n\n".join(context_docs)
                 qa_chain = create_qa_chain()
-                answer = qa_chain.invoke({"context": context, "question": query})
-
+                answer_result = qa_chain.invoke({"context": context, "question": query})
+                answer_text = answer_result.content  # ✅ 只取字符串部分
 
                 # Create and store the new history item
-                new_item = {"query": query, "answer": answer, "docs_by_source": docs_by_source}
+                new_item = {
+                    "query": query,
+                    "answer": answer_text,  # ✅ 用字符串存储答案
+                    "docs_by_source": docs_by_source
+                }
+
                 st.session_state.history.insert(0, new_item)
                 st.session_state.active_item = new_item
                 st.rerun()
