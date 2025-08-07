@@ -36,7 +36,8 @@ os.makedirs("static", exist_ok=True)
 # --- START OF CONFIGURATION AND TEXT/TRANSLATION SECTION ---
 os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY", "")
 os.environ["OPENAI_API_BASE"] = os.getenv("OPENAI_API_BASE", "https://api.deepseek.com/v1")
-similarity_model = SentenceTransformer('all-MiniLM-L6-v2')
+similarity_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+
 
 LANG = "en"
 
@@ -90,6 +91,20 @@ TEXT = {
 }
 # --- END OF CONFIGURATION AND TEXT/TRANSLATION SECTION ---
 import re
+
+def expand_query_with_llm(query):
+    llm = ChatOpenAI(
+        model_name="deepseek-chat",
+        temperature=0.3,
+        openai_api_key=os.getenv("OPENAI_API_KEY"),
+        openai_api_base=os.getenv("OPENAI_API_BASE")
+    )
+    prompt = (
+        f"请将下面这个提问，改写成更容易从技术文档中找到答案的问题，保留原意并补全关键词：{query}"
+    )
+    return llm.invoke(prompt).content
+
+
 
 def clean_markdown(text):
     """
@@ -202,10 +217,11 @@ def create_qa_chain():
     )
 
     prompt = ChatPromptTemplate.from_messages([
-        ("system", "You are a helpful assistant. Based on the reference documents below, answer the user question under these rules:\n"
-                   "1. Only answer based on the document, do not use external knowledge.\n"
-                   "2. Cite the content clearly with source (format: [Document, Chapter, Page]).\n"
-                   "3. If not found, respond with 'No relevant information found'."),
+        ("system", "You are a helpful assistant. Use the following reference documents to answer the user's question:\n"
+                   "1. Prefer to answer strictly based on the document content.\n"
+                   "2. If the answer requires basic reasoning or summarization, you may infer it from the context.\n"
+                   "3. Always cite the source in the format [Document, Chapter, Page].\n"
+                   "4. If truly not found, respond with 'No relevant information found'."),
         ("human", "{context}\n\nQuestion: {question}")
     ])
 
@@ -401,6 +417,8 @@ def main():
             st.session_state.active_item = None
 
         query = st.text_input(T["enter_question"], key="query_input")
+        expanded_query = expand_query_with_llm(query)
+
 
         if st.button("🧠 Generate Section Summaries"):
             with st.spinner("Generating summaries..."):
@@ -451,7 +469,8 @@ def main():
         is_new_query = query and (not st.session_state.active_item or query != st.session_state.active_item.get("query"))
         if is_new_query:
             with st.spinner(T["retrieving"]):
-                retriever = create_hybrid_retriever(st.session_state.vector_store, st.session_state.splits, query)
+                retriever = create_hybrid_retriever(st.session_state.vector_store, st.session_state.splits, expanded_query)
+
                 docs = retriever.get_relevant_documents(query)
                 scored_docs = [(doc, calculate_similarity(query, doc.page_content)) for doc in docs]
                 top_docs = sorted(scored_docs, key=lambda x: x[1], reverse=True)[:3]
