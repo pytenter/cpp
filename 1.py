@@ -16,6 +16,8 @@ from langchain.chains import LLMChain
 from langchain.prompts import ChatPromptTemplate
 from sentence_transformers import SentenceTransformer
 from collections import defaultdict
+import hashlib
+
 os.makedirs("static", exist_ok=True)
 
 #步骤一：修改requirements文件
@@ -291,9 +293,14 @@ def display_qa_results(item, T):
             st.write(f"  - Chapter: {doc.metadata['chapter']} | Page: {page_num + 1}")
             st.write(f"    Excerpt: {doc.page_content[:200]}...")
             # 🔍 原文预览按钮：添加在 excerpt 下方
+            # 🔍 原文预览按钮：添加在 excerpt 下方（使用内容哈希避免重复 key）
+            raw_key = f"{source_file}|{page_num}|{item['query']}|{doc.page_content[:80]}"
+            uniq_suffix = hashlib.md5(raw_key.encode("utf-8")).hexdigest()[:10]
+            btn_key = f"preview_{uniq_suffix}"
+
             st.button(
                 f"🔍 {T['highlight_preview'].format(page_num=page_num + 1)}",
-                key=f"preview_{source_file}_{page_num}_{item['query']}",
+                key=btn_key,
                 on_click=show_pdf_preview,
                 kwargs={
                     "source_file": source_file,
