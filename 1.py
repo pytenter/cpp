@@ -107,7 +107,6 @@ def expand_query_with_llm(query):
     return llm.invoke(prompt).content
 
 
-
 def clean_markdown(text):
     """
     Remove markdown/LaTeX formatting from text (like **bold**, $math$, \(...\), etc.)
